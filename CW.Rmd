@@ -1,0 +1,92 @@
+---
+title: "Introduction to Statistical Learning 2020/2021 Coursework"
+author: "Juliette Limozin, CID: 01343907"
+date: "Due 25/02/2021, 5 pm"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(numbers)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stats)
+library(tibble)
+library(forecast)
+library(smacof)
+library(MASS)
+```
+
+I have decided to perform analysis on the distance between Circle Line stations because it is my least favourite tube line, and I always felt like it was making quite a detour to reach different stations. I therefore took my distance measure in this coursework as the travel time between stations, accounting for any time spent when a train is stopping at a station, to prove my point of the inefficiency of this tube line.
+
+```{r, include = FALSE}
+library(readxl)
+distances <- read_excel("~/Desktop/Maths/distances.xlsx", 
+    sheet = "Sheet1")
+dist <- (distances[1:20,2:21] + t(distances[1:20,2:21]))
+distscalesoln <- cmdscale(dist, k = 9, eig = TRUE)
+```
+
+My data was gathered from Google Maps: I calculated the travel time (in minutes), using the Circle line only, between the stations, setting an approximate departure time of 12:00 pm on Monday March 1st for consistency in the measurements. I made sure to go both clockwise and counter clockwise on the Circle line when taking the travel time between two stations, and took the rotation that took the least time. Note, whenever I was travelling clockwise and passing through Edgware Road, I had to change plaforms, which Google Maps accounted for when calculating travel times. My gathered data is a symmetrix matrix with zeros on the diagonal. 
+
+The symmetry assumption is indeed a bit weird given that the Circle line has an inner and outer rail ring, therefore making travling on the outer ring longer than on the inner ring. So the travel times are not symmetric in practice, but I considered the difference trivial enough to consider the travel times to be the same both ways.
+
+After applying classical multidimensional scaling on the distance matrix, I get the following recovered positions of the stations from the first two dimensions, with an additional plot that includes the third dimension.
+
+```{r, echo = FALSE}
+station_pos <- read_excel("~/Desktop/Maths/Year_4/Stat_Learning/station_pos.xlsx")
+real_pos <- t(as.matrix(station_pos))[,1:2]
+X <- cbind(real_pos[,2],real_pos[,1])
+Y <- cbind(distscalesoln$points[,1], distscalesoln$points[,2], distscalesoln$points[,3])
+
+plot(Y[,2], Y[,1], type = "n", main = 'Recovered configuration after classical multidimensional scaling')
+text(Y[,2], Y[,1], lab = colnames(dist), cex=0.7)
+radius <- sqrt(abs(Y[,3])/pi)
+symbols(Y[,2],Y[,1], circles = radius, inches = 0.25, fg = "white", 
+    bg = "red", main = "Third dimension against location")
+text(Y[,2], Y[,1], lab = colnames(dist), cex=0.7)
+```
+
+At first the recovered positions seem relatively accurate. The eigenvalue plot below shows that it is reasonable to take the first two dimensions for the recovered configuration as their eigenvalues are significantly bigger, with some interest in the third dimensions.
+
+```{r, echo = FALSE}
+plot(1:20, distscalesoln$eig, xlab = 'Eigenvalue number', ylab = 'Eigenvalue', main = 'Eigenvalue plot from classical scaling')
+abline(h = 0, lty = 2)
+```
+
+I also recovered the configuration using ordinal scaling. The plot comparing the configuration from the two scaling methods is shown below. Because we see a reduction in the stress it is expected to have an ordinal scaling solution that is different from the classical solution.
+
+```{r, echo = FALSE}
+distobj <- as.dist(dist)
+distisosoln <- isoMDS(d=distobj)
+plot(distisosoln$points[,2], distisosoln$points[,1], xlab = 'Y[,2]', ylab = 'Y[,1]', main = 'Ordinal vs Classical scaling')
+text(distisosoln$points[,2], distisosoln$points[,1], lab = colnames(dist), cex = 0.7)
+text(Y[,2], Y[,1], lab = colnames(dist), cex=0.7, col = 2)
+legend(x="topleft", legend=c("Ordinal", "Classical"), col=1:2, lty=c(1,1))
+Yiso <- cbind(distisosoln$points[,1], distisosoln$points[,2])
+```
+
+To compare the recovered positions with the real positions, which I gathered in a data set containing the latitude and longitude of each station, I used the Procrustes method. I then centered the configurations at Edgware Road station as I found that the translation vector I got from Procrutes was often too long. The plot below shows a comparison of the configurations.
+
+```{r, echo = FALSE}
+proc <- Procrustes(X=X,Y=Y)
+
+plot(X[,2]-X[1,2]*as.vector(1^{1:20}), X[,1]-X[1,1]*as.vector(1^{1:20}),type = 'n', ylim = c(-0.055,0.02), xlab = 'Y[,2]', ylab = 'Y[,1]', main = 'True vs recoverd configurations')
+text(X[,2]-X[1,2]*as.vector(1^{1:20}), X[,1]-X[1,1]*as.vector(1^{1:20}), lab=colnames(dist), cex=0.7)
+text(proc$Yhat[,2]-proc$Yhat[1,2]*as.vector(1^{1:20}), proc$Yhat[,1]-proc$Yhat[1,1]*as.vector(1^{1:20}), lab=colnames(dist), cex=0.7, col=2)
+#legend(x="topleft", legend=c("True", "Recovered"), col=1:2, lty=c(1,1))
+
+prociso <- Procrustes(X=X,Y=Yiso)
+
+#plot(X[,2]-X[1,2]*as.vector(1^{1:20}), X[,1]-X[1,1]*as.vector(1^{1:20}),type = 'n', xlim = c(-0.06,0.12), ylim = c(-0.07,0.03), xlab = 'Y[,2]', ylab = 'Y[,1]')
+#text(X[,2]-X[1,2]*as.vector(1^{1:20}), X[,1]-X[1,1]*as.vector(1^{1:20}), lab=colnames(dist), cex=0.7)
+text(prociso$Yhat[,2]-prociso$Yhat[1,2]*as.vector(1^{1:20}), prociso$Yhat[,1]-prociso$Yhat[1,1]*as.vector(1^{1:20}), lab=colnames(dist), cex=0.7, col=3)
+legend(x="topleft", legend=c("True", "Classical", "Ordinal"), col=1:3, lty=c(1,1))
+```
+
+As we can see, the recovered configurations are often quite far fom the real positions, and even more with the ordinal scaling for stations in the South. For both scaling methods, we notice that the configurations seem to have been squashed vertically, making the stations on the West and East sides of the Circle Line closer than they really are in terms of travel time, and the opposite for stations in the North and South. 
+
+My takeaway from this is that if I want to travel between some Western and Eastern stations, the Circle Line is efficient in terms of travel time; however if I want to travel betwen Northern and Southern stations of the line, I'm much better off using a different tube line. This makes sense in reality, as for example it takes 8 minutes to travel between Victoroia and King's Cross using the Victoria line, versus 26 minutes using the Circle line.
